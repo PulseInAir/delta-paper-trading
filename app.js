@@ -3,7 +3,7 @@
 // If running locally on FastAPI, it will poll from relative paths.
 // If deployed to Vercel, it can point to a configured environment variable backend, 
 // or default to relative path which is standard if front/back are combined.
-const API_BASE = "https://delta-paper-trading.onrender.com"; 
+const API_BASE = ""; 
 
 let equityChart = null;
 let lastLogId = 0;
