@@ -276,6 +276,32 @@
             </div>
         </section>
         
+        <!-- Trade History Grid -->
+        <section class="positions-panel glass-card">
+            <h2 class="panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Trade History</h2>
+            <div class="table-container">
+                <table class="positions-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Size</th>
+                            <th>Price</th>
+                            <th>Fee (₹)</th>
+                            <th>Realized PnL (₹)</th>
+                            <th>Net PnL (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-table-body">
+                        <tr>
+                            <td colspan="8" class="empty-table">No completed trades yet.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
         <!-- Console Terminal Logs -->
         <section class="terminal-panel glass-card">
             <div class="terminal-header">

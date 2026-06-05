@@ -23,8 +23,12 @@ function formatINR(val) {
 function appendLog(level, message, timestamp) {
     const screen = document.getElementById("terminal-screen-logs");
     if (!screen) return;
+    let tsStr = timestamp;
+    if (timestamp && !timestamp.endsWith("Z")) {
+        tsStr += "Z";
+    }
     
-    const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+    const timeStr = timestamp ? new Date(tsStr).toLocaleTimeString() : new Date().toLocaleTimeString();
     const line = document.createElement("div");
     
     // Set class depending on level
@@ -251,6 +255,46 @@ async function fetchHistory() {
         
         if (data.success) {
             updateChart(data.result.equity_curve);
+            
+            // Populate Trades Table
+            const trades = data.result.trades || [];
+            const tbody = document.getElementById("trades-table-body");
+            if (tbody) {
+                if (trades.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" class="empty-table">No completed trades yet.</td></tr>`;
+                } else {
+                    let html = "";
+                    trades.forEach(t => {
+                        let tsStr = t.timestamp;
+                        if (tsStr && !tsStr.endsWith("Z")) tsStr += "Z";
+                        const timeStr = new Date(tsStr).toLocaleString();
+                        
+                        const sideText = t.side.toUpperCase();
+                        const sideClass = t.side === "buy" ? "buy" : "sell";
+                        
+                        const grossPnl = parseFloat(t.realized_pnl) || 0;
+                        const fee = parseFloat(t.fee) || 0;
+                        const netPnl = grossPnl - fee;
+                        
+                        const grossClass = grossPnl >= 0 ? "positive" : "negative";
+                        const netClass = netPnl >= 0 ? "positive" : "negative";
+                        
+                        html += `
+                        <tr>
+                            <td>${timeStr}</td>
+                            <td><strong>${t.symbol}</strong></td>
+                            <td><span class="side-badge ${sideClass}">${sideText}</span></td>
+                            <td>${t.size}</td>
+                            <td>$${parseFloat(t.price).toFixed(2)}</td>
+                            <td>₹${formatINR(fee)}</td>
+                            <td class="growth-text ${grossClass}">₹${formatINR(grossPnl)}</td>
+                            <td class="growth-text ${netClass}">₹${formatINR(netPnl)}</td>
+                        </tr>
+                        `;
+                    });
+                    tbody.innerHTML = html;
+                }
+            }
         }
     } catch (e) {
         console.error("Error fetching history:", e);
