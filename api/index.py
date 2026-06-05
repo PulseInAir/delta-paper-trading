@@ -9,10 +9,10 @@ from dotenv import load_dotenv
 # Ensure api/ directory is on the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.db import DatabaseManager
-from api.delta_client import DeltaClient
-from api.portfolio import PortfolioManager
-from api.trading_engine import TradingEngine
+from core.db import DatabaseManager
+from core.delta_client import DeltaClient
+from core.portfolio import PortfolioManager
+from core.trading_engine import TradingEngine
 
 load_dotenv()
 

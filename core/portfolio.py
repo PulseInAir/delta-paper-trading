@@ -2,8 +2,8 @@ import math
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from api.db import DatabaseManager
-from api.delta_client import DeltaClient
+from core.db import DatabaseManager
+from core.delta_client import DeltaClient
 
 load_dotenv()
 
