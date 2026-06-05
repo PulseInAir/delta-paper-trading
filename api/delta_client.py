@@ -93,11 +93,9 @@ class DeltaClient:
         return self.request("GET", "/v2/tickers", auth=False)
         
     def get_ticker(self, symbol):
-        # Fetches ticker for a specific symbol
         res = self.request("GET", f"/v2/tickers/{symbol}", auth=False)
         if res.get("success"):
             return res
-        # Fallback: fetch all and filter
         all_tickers = self.get_tickers()
         if all_tickers.get("success"):
             for t in all_tickers.get("result", []):
@@ -125,12 +123,11 @@ class DeltaClient:
         return self.request("GET", "/v2/positions", auth=True)
 
     def place_order(self, product_id, size, side, order_type="limit_order", price=None, post_only=False, reduce_only=False):
-        # Format the parameters for placement
         data = {
             "product_id": int(product_id),
             "size": int(size),
-            "side": side.lower(), # "buy" or "sell"
-            "order_type": order_type # "limit_order" or "market_order"
+            "side": side.lower(),
+            "order_type": order_type
         }
         
         if order_type == "limit_order":

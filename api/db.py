@@ -8,9 +8,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-os.makedirs(DB_DIR, exist_ok=True)
-SQLITE_PATH = os.path.join(DB_DIR, "trading.db")
+# In Vercel serverless, the only writable directory is /tmp
+SQLITE_PATH = "/tmp/trading.db"
 
 class DatabaseManager:
     def __init__(self):
@@ -18,6 +17,8 @@ class DatabaseManager:
         self.supabase_key = os.getenv("SUPABASE_KEY")
         self.use_supabase = bool(self.supabase_url and self.supabase_key)
         self.init_sqlite()
+        if self.use_supabase:
+            self.sync_from_supabase()
         
     def init_sqlite(self):
         conn = sqlite3.connect(SQLITE_PATH)
@@ -87,7 +88,7 @@ class DatabaseManager:
         )
         """)
         
-        # Initialize portfolio row if not present
+        # Initialize portfolio row locally
         cursor.execute("SELECT COUNT(*) FROM portfolio WHERE id = 1")
         if cursor.fetchone()[0] == 0:
             initial_balance = float(os.getenv("INITIAL_PAPER_BALANCE_INR", "100000"))
@@ -98,6 +99,90 @@ class DatabaseManager:
             
         conn.commit()
         conn.close()
+
+    def sync_from_supabase(self):
+        """Pulls state from Supabase to initialize local ephemeral SQLite db on container boot."""
+        print("[DATABASE] Syncing state from Supabase...")
+        try:
+            # Sync Portfolio
+            port_res = self._supabase_request("GET", "portfolio", params={"id": "eq.1"})
+            if port_res and len(port_res) > 0:
+                p = port_res[0]
+                conn = sqlite3.connect(SQLITE_PATH)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE portfolio SET cash = ?, blocked_margin = ?, total_equity = ?, updated_at = ? WHERE id = 1",
+                    (float(p["cash"]), float(p["blocked_margin"]), float(p["total_equity"]), p["updated_at"])
+                )
+                conn.commit()
+                conn.close()
+                print("[DATABASE] Portfolio synchronized from Supabase.")
+                
+            # Sync Positions
+            pos_res = self._supabase_request("GET", "positions")
+            if pos_res is not None:
+                conn = sqlite3.connect(SQLITE_PATH)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM positions")  # Clear stale cache
+                for pos in pos_res:
+                    cursor.execute(
+                        """
+                        INSERT INTO positions (symbol, product_id, underlying, side, size, entry_price, mark_price, margin, unrealized_pnl, delta, gamma, theta, vega, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (pos["symbol"], pos["product_id"], pos["underlying"], pos["side"], pos["size"],
+                         pos["entry_price"], pos["mark_price"], pos["margin"], pos["unrealized_pnl"],
+                         pos["delta"], pos["gamma"], pos["theta"], pos["vega"], pos["updated_at"])
+                    )
+                conn.commit()
+                conn.close()
+                print(f"[DATABASE] Synchronized {len(pos_res)} positions from Supabase.")
+                
+            # Sync Trades
+            trades_res = self._supabase_request("GET", "trades", params={"order": "id.desc", "limit": "100"})
+            if trades_res is not None:
+                conn = sqlite3.connect(SQLITE_PATH)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM trades")
+                for t in reversed(trades_res):  # Re-insert in order
+                    cursor.execute(
+                        "INSERT INTO trades (id, timestamp, symbol, side, size, price, realized_pnl, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (t["id"], t["timestamp"], t["symbol"], t["side"], t["size"], t["price"], t["realized_pnl"], t["fee"])
+                    )
+                conn.commit()
+                conn.close()
+                
+            # Sync Equity History
+            eq_res = self._supabase_request("GET", "equity_history", params={"order": "id.desc", "limit": "200"})
+            if eq_res is not None:
+                conn = sqlite3.connect(SQLITE_PATH)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM equity_history")
+                for e in reversed(eq_res):
+                    cursor.execute(
+                        "INSERT INTO equity_history (id, timestamp, equity) VALUES (?, ?, ?)",
+                        (e["id"], e["timestamp"], e["equity"])
+                    )
+                conn.commit()
+                conn.close()
+                
+            # Sync Logs
+            logs_res = self._supabase_request("GET", "logs", params={"order": "id.desc", "limit": "100"})
+            if logs_res is not None:
+                conn = sqlite3.connect(SQLITE_PATH)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM logs")
+                for l in reversed(logs_res):
+                    cursor.execute(
+                        "INSERT INTO logs (id, timestamp, level, message) VALUES (?, ?, ?, ?)",
+                        (l["id"], l["timestamp"], l["level"], l["message"])
+                    )
+                conn.commit()
+                conn.close()
+                
+            print("[DATABASE] Full database sync with Supabase completed successfully.")
+        except Exception as e:
+            print(f"[DATABASE] Sync from Supabase failed (using local fallback): {str(e)}")
 
     def _supabase_request(self, method, table, data=None, params=None):
         if not self.use_supabase:
@@ -111,7 +196,6 @@ class DatabaseManager:
         }
         try:
             if method.upper() == "POST":
-                # For upsert, we can add Prefer: resolution=merge-duplicates
                 headers["Prefer"] = "resolution=merge-duplicates"
                 response = requests.post(url, headers=headers, json=data, params=params, timeout=5)
             elif method.upper() == "GET":
@@ -122,7 +206,6 @@ class DatabaseManager:
                 response = requests.patch(url, headers=headers, json=data, params=params, timeout=5)
             return response.json() if response.status_code in [200, 201] else None
         except Exception:
-            # Silent fallback to local if Supabase request fails (network issue or tables not setup)
             return None
 
     # Portfolio state operations
@@ -148,11 +231,9 @@ class DatabaseManager:
                 "total_equity": total_equity,
                 "updated_at": updated_at
             }
-            # Custom Upsert for Supabase
             self._supabase_request("POST", "portfolio", payload)
 
     def load_portfolio_state(self):
-        # Read from SQLite as local cache
         conn = sqlite3.connect(SQLITE_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT cash, blocked_margin, total_equity FROM portfolio WHERE id = 1")
@@ -279,7 +360,7 @@ class DatabaseManager:
     # Logs operations
     def add_log(self, level, message):
         timestamp = datetime.utcnow().isoformat()
-        print(f"[{level}] {message}") # Console output
+        print(f"[{level}] {message}")
         
         # Save to SQLite
         conn = sqlite3.connect(SQLITE_PATH)
@@ -289,7 +370,6 @@ class DatabaseManager:
             (timestamp, level, message)
         )
         conn.commit()
-        # Keep logs table at a reasonable size locally (max 1000 items)
         cursor.execute("DELETE FROM logs WHERE id IN (SELECT id FROM logs ORDER BY id DESC LIMIT -1 OFFSET 1000)")
         conn.commit()
         conn.close()

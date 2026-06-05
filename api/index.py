@@ -1,47 +1,34 @@
 import os
 import sys
-import uvicorn
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Body
+import sqlite3
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Add parent directory to path so imports work when running from backend/
+# Ensure api/ directory is on the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.db import DatabaseManager
-from backend.delta_client import DeltaClient
-from backend.portfolio import PortfolioManager
-from backend.trading_engine import TradingEngine
+from api.db import DatabaseManager
+from api.delta_client import DeltaClient
+from api.portfolio import PortfolioManager
+from api.trading_engine import TradingEngine
 
 load_dotenv()
 
-# Initialize managers
+# Instantiate singletons inside the serverless execution context
+# (These remain warm between requests on Vercel)
 db = DatabaseManager()
 client = DeltaClient()
 portfolio = PortfolioManager(db, client)
 engine = TradingEngine(db, client, portfolio)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    db.add_log("SYSTEM", "FastAPI Server Starting Up...")
-    engine.start()
-    yield
-    # Shutdown
-    db.add_log("SYSTEM", "FastAPI Server Shutting Down...")
-    engine.stop()
-
 app = FastAPI(
-    title="Delta Exchange Options Trading Console",
-    description="Hedge Fund Grade Options Market Maker & Volatility Harvester",
-    version="1.0.0",
-    lifespan=lifespan
+    title="Delta Exchange Options Serverless Console",
+    version="1.0.0"
 )
 
-# CORS middleware to allow Vercel dashboard or other local frontends to query
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -50,12 +37,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request Models
+# Request schemas
 class TradeRequest(BaseModel):
     symbol: str
     product_id: int
     underlying: str
-    side: str  # 'buy' or 'sell'
+    side: str
     size: int
     price: float
     contract_value: float = 0.001
@@ -64,15 +51,19 @@ class CloseRequest(BaseModel):
     symbol: str
 
 class ConfigRequest(BaseModel):
-    mode: str = None  # 'paper' or 'live'
+    mode: str = None
     volatility_harvester: bool = None
     momentum_breakout: bool = None
+
+# Helper to run tick on standard API requests
+def trigger_tick():
+    engine.tick()
 
 # API Endpoints
 @app.get("/api/status")
 async def get_status():
+    trigger_tick()
     status = engine.get_status()
-    # Add portfolio overview summary
     status.update({
         "equity_inr": portfolio.total_equity_inr,
         "cash_inr": portfolio.cash_inr,
@@ -83,9 +74,9 @@ async def get_status():
 
 @app.get("/api/portfolio")
 async def get_portfolio():
+    trigger_tick()
     positions = db.load_positions()
     
-    # Calculate portfolio Greeks
     p_delta = sum(p.get("delta", 0.0) for p in positions)
     p_gamma = sum(p.get("gamma", 0.0) for p in positions)
     p_theta = sum(p.get("theta", 0.0) for p in positions)
@@ -112,6 +103,7 @@ async def get_portfolio():
 
 @app.get("/api/positions")
 async def get_positions():
+    trigger_tick()
     positions = db.load_positions()
     return {"success": True, "result": positions}
 
@@ -129,8 +121,8 @@ async def get_history():
 
 @app.get("/api/logs")
 async def get_logs():
+    # Only return recent logs
     logs = db.load_logs(limit=50)
-    # Reverse to send chronological logs for terminal
     logs.reverse()
     return {"success": True, "result": logs}
 
@@ -174,16 +166,12 @@ async def reset_paper_portfolio():
     if portfolio.mode != "paper":
         raise HTTPException(status_code=400, detail="Portfolio reset only allowed in Paper trading mode.")
         
-    # Reset cash and positions
     initial_balance = float(os.getenv("INITIAL_PAPER_BALANCE_INR", "100000"))
     portfolio.cash_inr = initial_balance
     portfolio.blocked_margin_inr = 0.0
     portfolio.total_equity_inr = initial_balance
     
-    # Delete positions in database
-    conn = db.init_sqlite() # re-init just in case
-    import sqlite3
-    conn = sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "trading.db"))
+    conn = sqlite3.connect("/tmp/trading.db")
     cursor = conn.cursor()
     cursor.execute("DELETE FROM positions")
     cursor.execute("DELETE FROM trades")
@@ -192,18 +180,14 @@ async def reset_paper_portfolio():
     conn.commit()
     conn.close()
     
-    # Re-save
     db.save_portfolio_state(initial_balance, 0.0, initial_balance)
     db.add_log("SYSTEM", f"Paper portfolio reset to {initial_balance} INR.")
     return {"success": True, "message": "Paper portfolio reset successfully."}
 
-# Mount static frontend files at the root
-frontend_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
-if os.path.exists(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")
-else:
-    db.add_log("WARNING", "Frontend folder not found. API is running, but static website serving is disabled.")
-
-if __name__ == "__main__":
-    # Host on 0.0.0.0 to make it accessible inside docker/cloud platforms
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+# Cron Trigger - forced tick called by Vercel Cron Job every 1 minute
+@app.get("/api/cron")
+async def vercel_cron_trigger():
+    # Force run loop tick bypassing standard 1.5s throttle to guarantee execution
+    run_status = engine.tick()
+    db.add_log("SYSTEM", f"Vercel Cron Job trigger executed (Tick run: {run_status})")
+    return {"success": True, "run_status": run_status}
