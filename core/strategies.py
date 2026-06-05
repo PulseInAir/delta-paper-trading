@@ -140,7 +140,8 @@ class VolatilityHarvester(BaseStrategy):
                         "iv": iv,
                         "abs_delta": abs_delta,
                         "price": float(ticker.get("mark_price", 0.0)),
-                        "contract_value": float(prod.get("contract_value", 0.001))
+                        "contract_value": float(prod.get("contract_value", 0.001)),
+                        "spot_price": spot_price
                     })
                     
             calls = [c for c in candidates if c["contract_type"] == "call_options"]
@@ -154,7 +155,7 @@ class VolatilityHarvester(BaseStrategy):
                 target = calls[0]
                 self.portfolio.place_order(
                     target["symbol"], target["product_id"], asset, "sell", 
-                    self.max_contracts_per_trade, target["price"], target["contract_value"]
+                    self.max_contracts_per_trade, target["price"], target["contract_value"], target["spot_price"]
                 )
                 self.db.add_log("INFO", f"Volatility Harvester: Found high IV Call option {target['symbol']} (IV: {target['iv']*100:.1f}%, Delta: {target['abs_delta']:.2f}). Selling {self.max_contracts_per_trade} contracts.")
                 
@@ -163,7 +164,7 @@ class VolatilityHarvester(BaseStrategy):
                 target = puts[0]
                 self.portfolio.place_order(
                     target["symbol"], target["product_id"], asset, "sell", 
-                    self.max_contracts_per_trade, target["price"], target["contract_value"]
+                    self.max_contracts_per_trade, target["price"], target["contract_value"], target["spot_price"]
                 )
                 self.db.add_log("INFO", f"Volatility Harvester: Found high IV Put option {target['symbol']} (IV: {target['iv']*100:.1f}%, Delta: {target['abs_delta']:.2f}). Selling {self.max_contracts_per_trade} contracts.")
 
@@ -261,7 +262,8 @@ class MomentumBreakout(BaseStrategy):
                     "strike_price": strike_price,
                     "distance": abs(strike_price - spot_price),
                     "price": float(ticker.get("mark_price", 0.0)),
-                    "contract_value": float(prod.get("contract_value", 0.001))
+                    "contract_value": float(prod.get("contract_value", 0.001)),
+                    "spot_price": spot_price
                 })
                 
             if not candidates:
@@ -272,7 +274,7 @@ class MomentumBreakout(BaseStrategy):
             
             success = self.portfolio.place_order(
                 target["symbol"], target["product_id"], asset, "buy",
-                self.buy_size_contracts, target["price"], target["contract_value"]
+                self.buy_size_contracts, target["price"], target["contract_value"], target["spot_price"]
             )
             
             if success:

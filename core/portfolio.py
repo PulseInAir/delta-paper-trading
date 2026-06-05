@@ -118,7 +118,7 @@ class PortfolioManager:
                 margin_usd = 0.0
             else:
                 pnl_usd = (entry_price - mark_price) * contract_value * size
-                margin_usd = 0.12 * spot_price * contract_value * size
+                margin_usd = (0.10 * spot_price * contract_value * size) + (mark_price * contract_value * size)
                 
             pnl_inr = pnl_usd * FIXED_INR_USD_RATE
             margin_inr = margin_usd * FIXED_INR_USD_RATE
@@ -244,11 +244,20 @@ class PortfolioManager:
                 
         self.db.save_portfolio_state(self.cash_inr, self.blocked_margin_inr, self.total_equity_inr)
 
-    def execute_paper_order(self, symbol, product_id, underlying, side, size, price, contract_value):
-        fee_rate = 0.0005
-        notional_value_usd = size * contract_value * price
-        fee_inr = notional_value_usd * fee_rate * FIXED_INR_USD_RATE
-        premium_inr = notional_value_usd * FIXED_INR_USD_RATE
+    def execute_paper_order(self, symbol, product_id, underlying, side, size, price, contract_value, spot_price=None):
+        if spot_price is None or spot_price <= 0:
+            spot_price = 60000.0 if "BTC" in symbol else 3000.0
+
+        fee_rate = 0.0003
+        notional_value_usd = size * contract_value * spot_price
+        premium_usd = size * contract_value * price
+        
+        raw_fee_usd = notional_value_usd * fee_rate
+        fee_cap_usd = premium_usd * 0.035
+        actual_fee_usd = min(raw_fee_usd, fee_cap_usd)
+        
+        fee_inr = actual_fee_usd * FIXED_INR_USD_RATE
+        premium_inr = premium_usd * FIXED_INR_USD_RATE
         
         positions = self.db.load_positions()
         pos = next((p for p in positions if p["symbol"] == symbol), None)
@@ -286,7 +295,7 @@ class PortfolioManager:
                 self.db.add_log("TRADE", f"Bought {size} contracts of {symbol} (Long option) at ${price:.2f}. Premium: {premium_inr:.2f} INR. Fee: {fee_inr:.2f} INR")
                 
         else:
-            margin_usd = 0.12 * price * contract_value * size
+            margin_usd = (0.10 * spot_price * contract_value * size) + premium_usd
             margin_inr = margin_usd * FIXED_INR_USD_RATE
             
             if self.cash_inr < margin_inr + fee_inr:
@@ -320,7 +329,7 @@ class PortfolioManager:
         self.db.save_portfolio_state(self.cash_inr, self.blocked_margin_inr, self.total_equity_inr)
         return True
 
-    def place_order(self, symbol, product_id, underlying, side, size, price, contract_value):
+    def place_order(self, symbol, product_id, underlying, side, size, price, contract_value, spot_price=None):
         if self.mode == "live":
             res = self.client.place_order(product_id, size, side, price=price)
             if res.get("success"):
@@ -332,7 +341,7 @@ class PortfolioManager:
                 self.db.add_log("WARNING", f"Failed to place live order: {error_msg}")
                 return False
         else:
-            return self.execute_paper_order(symbol, product_id, underlying, side, size, price, contract_value)
+            return self.execute_paper_order(symbol, product_id, underlying, side, size, price, contract_value, spot_price)
 
     def close_position(self, symbol):
         positions = self.db.load_positions()
