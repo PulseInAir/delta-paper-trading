@@ -142,7 +142,8 @@ class PortfolioManager:
                 
             option_type = 'call' if prod.get("contract_type") == 'call_options' else 'put'
             
-            greeks = calculate_greeks(option_type, spot_price, strike_price, T, 0.05, iv)
+            safe_spot = max(spot_price, 0.001)
+            greeks = calculate_greeks(option_type, safe_spot, strike_price, T, 0.05, iv)
             
             dir_coeff = 1 if side == "buy" else -1
             pos_weight = size * contract_value * dir_coeff
