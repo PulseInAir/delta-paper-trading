@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Delta Hedge Console</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- CSS stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="glass-bg-blur"></div>
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="main-header glass-card">
+            <div class="header-logo">
+                <i class="fa-solid fa-gauge-high logo-icon"></i>
+                <div class="logo-text">
+                    <h1>ANTIGRAVITY</h1>
+                    <span>Delta Hedge Fund Console</span>
+                </div>
+            </div>
+            
+            <div class="header-controls">
+                <div class="mode-selector">
+                    <span class="mode-label">Mode:</span>
+                    <div class="toggle-switch-container">
+                        <span id="mode-paper-label" class="toggle-mode-text active">Simulation</span>
+                        <label class="switch">
+                            <input type="checkbox" id="trading-mode-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span id="mode-live-label" class="toggle-mode-text">Live Trade</span>
+                    </div>
+                </div>
+                
+                <div class="status-indicator">
+                    <span class="status-dot green" id="engine-status-dot"></span>
+                    <span id="engine-status-text">Engine Online</span>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Metrics Row -->
+        <section class="metrics-grid">
+            <div class="metric-card glass-card glowing-emerald">
+                <div class="metric-header">
+                    <span>Net Portfolio Equity</span>
+                    <i class="fa-solid fa-wallet metric-icon green-icon"></i>
+                </div>
+                <div class="metric-value">
+                    <span class="currency">₹</span><span id="portfolio-equity">1,00,000.00</span>
+                </div>
+                <div class="metric-subtext">
+                    <span class="growth-text positive" id="portfolio-yield-pct">+0.00%</span>
+                    <span>since inception</span>
+                </div>
+            </div>
+            
+            <div class="metric-card glass-card">
+                <div class="metric-header">
+                    <span>Available Cash</span>
+                    <i class="fa-solid fa-money-bill-transfer metric-icon"></i>
+                </div>
+                <div class="metric-value">
+                    <span class="currency">₹</span><span id="portfolio-cash">1,00,000.00</span>
+                </div>
+                <div class="metric-subtext">
+                    <span>Unblocked trading collateral</span>
+                </div>
+            </div>
+            
+            <div class="metric-card glass-card">
+                <div class="metric-header">
+                    <span>Blocked Margin</span>
+                    <i class="fa-solid fa-lock metric-icon yellow-icon"></i>
+                </div>
+                <div class="metric-value">
+                    <span class="currency">₹</span><span id="portfolio-margin">0.00</span>
+                </div>
+                <div class="metric-subtext">
+                    <span id="margin-ratio">0.0%</span><span> margin utilization</span>
+                </div>
+            </div>
+            
+            <div class="metric-card glass-card">
+                <div class="metric-header">
+                    <span>Unrealized PnL</span>
+                    <i class="fa-solid fa-chart-line metric-icon" id="pnl-icon"></i>
+                </div>
+                <div class="metric-value" id="portfolio-pnl-container">
+                    <span class="currency">₹</span><span id="portfolio-pnl">0.00</span>
+                </div>
+                <div class="metric-subtext">
+                    <span>Mark-To-Market option valuation</span>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Main Dashboard Split -->
+        <div class="dashboard-split">
+            
+            <!-- Left Side: Greeks + Chart -->
+            <div class="split-left">
+                <!-- Greeks Panel -->
+                <div class="greeks-panel glass-card">
+                    <h2 class="panel-title"><i class="fa-solid fa-circle-nodes"></i> Portfolio Greeks</h2>
+                    <div class="greeks-grid">
+                        <div class="greek-item">
+                            <div class="greek-title">Delta (Δ)</div>
+                            <div class="greek-value" id="greek-delta">0.000</div>
+                            <div class="greek-bar-bg"><div class="greek-bar-fill cyan-bar" id="bar-delta" style="width: 50%"></div></div>
+                            <div class="greek-description">Directional exposure (notional BTC)</div>
+                        </div>
+                        <div class="greek-item">
+                            <div class="greek-title">Gamma (Γ)</div>
+                            <div class="greek-value" id="greek-gamma">0.000</div>
+                            <div class="greek-bar-bg"><div class="greek-bar-fill magenta-bar" id="bar-gamma" style="width: 5%"></div></div>
+                            <div class="greek-description">Rate of delta change per $1 move</div>
+                        </div>
+                        <div class="greek-item">
+                            <div class="greek-title">Theta (θ)</div>
+                            <div class="greek-value" id="greek-theta">0.000</div>
+                            <div class="greek-bar-bg"><div class="greek-bar-fill emerald-bar" id="bar-theta" style="width: 5%"></div></div>
+                            <div class="greek-description">Daily portfolio premium time decay</div>
+                        </div>
+                        <div class="greek-item">
+                            <div class="greek-title">Vega (ν)</div>
+                            <div class="greek-value" id="greek-vega">0.000</div>
+                            <div class="greek-bar-bg"><div class="greek-bar-fill gold-bar" id="bar-vega" style="width: 5%"></div></div>
+                            <div class="greek-description">Volatility sensitivity per 1% change</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Equity Curve Chart -->
+                <div class="chart-container glass-card">
+                    <div class="chart-header">
+                        <h2 class="panel-title"><i class="fa-solid fa-chart-area"></i> Equity Growth (INR)</h2>
+                        <div class="spot-prices">
+                            <span class="spot-item">BTCSpot: <strong id="spot-btc">$0.00</strong></span>
+                            <span class="spot-item">ETHSpot: <strong id="spot-eth">$0.00</strong></span>
+                        </div>
+                    </div>
+                    <div class="canvas-wrapper">
+                        <canvas id="equityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Side: Strategy Controls + Manual Trades -->
+            <div class="split-right">
+                <!-- Strategy Toggles -->
+                <div class="strategies-panel glass-card">
+                    <h2 class="panel-title"><i class="fa-solid fa-sliders"></i> Strategy Coordinator</h2>
+                    <div class="strategy-list">
+                        <div class="strategy-item glass-card">
+                            <div class="strat-info">
+                                <h3>Volatility Harvester</h3>
+                                <p>Sells out-of-the-money straddles/strangles on high IV</p>
+                                <span class="strat-badge active" id="badge-harvester">ACTIVE</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-harvester" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="strategy-item glass-card">
+                            <div class="strat-info">
+                                <h3>Momentum Breakout</h3>
+                                <p>Buys near-the-money options on RSI and price breakouts</p>
+                                <span class="strat-badge active" id="badge-breakout">ACTIVE</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-breakout" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="risk-controls">
+                        <div class="risk-item">
+                            <div class="risk-header">
+                                <span>Max Position Leverage</span>
+                                <span id="risk-leverage-val">5.0x</span>
+                            </div>
+                            <input type="range" min="1" max="20" value="5" class="risk-slider" id="risk-leverage">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Manual Options Order Form -->
+                <div class="manual-trade-panel glass-card">
+                    <h2 class="panel-title"><i class="fa-solid fa-file-invoice-dollar"></i> Manual Trade Override</h2>
+                    <form id="manual-order-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="trade-underlying">Asset</label>
+                                <select id="trade-underlying">
+                                    <option value="BTC">BTC</option>
+                                    <option value="ETH">ETH</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="trade-side">Side</label>
+                                <select id="trade-side">
+                                    <option value="buy">BUY (Long Option)</option>
+                                    <option value="sell">SELL (Short Option)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="trade-symbol">Symbol</label>
+                                <input type="text" id="trade-symbol" placeholder="e.g., C-BTC-65000-260626" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="trade-product-id">Product ID</label>
+                                <input type="number" id="trade-product-id" placeholder="e.g. 136718" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="trade-size">Size (Contracts)</label>
+                                <input type="number" id="trade-size" min="1" value="10" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="trade-price">Limit Price ($)</label>
+                                <input type="number" id="trade-price" step="0.01" placeholder="Premium in USD" required>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="submit-order-btn">Submit Order</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Positions Grid -->
+        <section class="positions-panel glass-card">
+            <h2 class="panel-title"><i class="fa-solid fa-list-check"></i> Active Options Positions</h2>
+            <div class="table-container">
+                <table class="positions-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Size</th>
+                            <th>Entry Price</th>
+                            <th>Mark Price</th>
+                            <th>Blocked Margin</th>
+                            <th>Unrealized PnL</th>
+                            <th>Delta (Δ)</th>
+                            <th>Theta (θ)</th>
+                            <th>Vega (ν)</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-table-body">
+                        <tr>
+                            <td colspan="11" class="empty-table">No active option positions. Scanning market...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <!-- Console Terminal Logs -->
+        <section class="terminal-panel glass-card">
+            <div class="terminal-header">
+                <h2 class="panel-title"><i class="fa-solid fa-terminal"></i> Hedge Fund Operations Log</h2>
+                <div class="terminal-controls">
+                    <button class="terminal-btn" id="reset-paper-btn"><i class="fa-solid fa-rotate-left"></i> Reset Simulation</button>
+                    <button class="terminal-btn" id="clear-logs-btn"><i class="fa-solid fa-trash-can"></i> Clear Screen</button>
+                </div>
+            </div>
+            <div class="terminal-screen" id="terminal-screen-logs">
+                <div class="log-line system">[SYSTEM] Console Initializing...</div>
+                <div class="log-line system">[SYSTEM] Connecting to Delta Exchange India API endpoints...</div>
+            </div>
+        </section>
+        
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>© 2026 Antigravity Options Trader. FIU-IND Compliant. Fixed conversion rate: 1 USD = 85.00 INR.</p>
+        </footer>
+    </div>
+</body>
+</html>

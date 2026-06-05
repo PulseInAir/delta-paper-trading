@@ -1,0 +1,39 @@
+# Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment variables (Crucial - contains your API Keys!)
+.env
+.env.local
+.env.*.local
+*Key.txt
+Delta Exchange API Key.txt
+
+# Databases and local state
+data/
+*.sqlite3
+*.db
+local_portfolio_state.json
+local_trade_history.json
+local_logs.txt
+
+# Editor / IDE configuration
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Frontend Node packages
+node_modules/
+dist/
+.vercel/
