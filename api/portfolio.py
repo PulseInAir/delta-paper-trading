@@ -59,16 +59,20 @@ class PortfolioManager:
     def __init__(self, db: DatabaseManager, client: DeltaClient):
         self.db = db
         self.client = client
-        self.mode = os.getenv("TRADING_MODE", "paper").lower()
         
         state = self.db.load_portfolio_state()
         self.cash_inr = state["cash"]
         self.blocked_margin_inr = state["blocked_margin"]
         self.total_equity_inr = state["total_equity"]
         
+    @property
+    def mode(self):
+        return self.db.load_config_state()["mode"]
+
     def set_mode(self, mode):
         if mode in ["paper", "live"]:
-            self.mode = mode
+            conf = self.db.load_config_state()
+            self.db.save_config_state(mode, conf["volatility_harvester"], conf["momentum_breakout"])
             self.db.add_log("SYSTEM", f"Trading mode switched to {mode.upper()}")
             
     def update_valuation(self, tickers_dict, products_dict):

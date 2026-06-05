@@ -11,9 +11,15 @@ class TradingEngine:
         self.client = client
         self.portfolio = portfolio
         
+        conf = self.db.load_config_state()
+        harv = VolatilityHarvester(db, portfolio)
+        harv.enabled = conf["volatility_harvester"]
+        brk = MomentumBreakout(db, portfolio)
+        brk.enabled = conf["momentum_breakout"]
+        
         self.strategies = {
-            "volatility_harvester": VolatilityHarvester(db, portfolio),
-            "momentum_breakout": MomentumBreakout(db, portfolio)
+            "volatility_harvester": harv,
+            "momentum_breakout": brk
         }
         
         self.underlying_history = {
@@ -41,6 +47,11 @@ class TradingEngine:
         self.last_tick_time = now
         
         try:
+            # Sync strategy states from DB config cache (polls every 10s via cache)
+            conf = self.db.load_config_state()
+            self.strategies["volatility_harvester"].enabled = conf["volatility_harvester"]
+            self.strategies["momentum_breakout"].enabled = conf["momentum_breakout"]
+            
             # 1. Fetch products list if cache is stale (>15 minutes) or empty
             self._fetch_products_if_needed()
             

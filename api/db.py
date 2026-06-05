@@ -11,11 +11,12 @@ load_dotenv()
 # In Vercel serverless, the only writable directory is /tmp
 SQLITE_PATH = "/tmp/trading.db"
 
-class DatabaseManager:
     def __init__(self):
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_KEY")
         self.use_supabase = bool(self.supabase_url and self.supabase_key)
+        self._config_cache = None
+        self._last_config_fetch = 0
         self.init_sqlite()
         if self.use_supabase:
             self.sync_from_supabase()
@@ -97,6 +98,14 @@ class DatabaseManager:
                 (initial_balance, initial_balance, datetime.utcnow().isoformat())
             )
             
+        # Initialize config row locally (id = 2)
+        cursor.execute("SELECT COUNT(*) FROM portfolio WHERE id = 2")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                "INSERT INTO portfolio (id, cash, blocked_margin, total_equity, updated_at) VALUES (2, 0, 1, 1, ?)",
+                (datetime.utcnow().isoformat(),)
+            )
+            
         conn.commit()
         conn.close()
 
@@ -117,6 +126,20 @@ class DatabaseManager:
                 conn.commit()
                 conn.close()
                 print("[DATABASE] Portfolio synchronized from Supabase.")
+                
+            # Sync Config
+            conf_res = self._supabase_request("GET", "portfolio", params={"id": "eq.2"})
+            if conf_res and len(conf_res) > 0:
+                c = conf_res[0]
+                conn = sqlite3.connect(SQLITE_PATH)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE portfolio SET cash = ?, blocked_margin = ?, total_equity = ?, updated_at = ? WHERE id = 2",
+                    (float(c["cash"]), float(c["blocked_margin"]), float(c["total_equity"]), c["updated_at"])
+                )
+                conn.commit()
+                conn.close()
+                print("[DATABASE] Config synchronized from Supabase.")
                 
             # Sync Positions
             pos_res = self._supabase_request("GET", "positions")
@@ -243,6 +266,77 @@ class DatabaseManager:
         if row:
             return {"cash": row[0], "blocked_margin": row[1], "total_equity": row[2]}
         return {"cash": 100000.0, "blocked_margin": 0.0, "total_equity": 100000.0}
+
+    def save_config_state(self, mode, harvester_enabled, breakout_enabled):
+        updated_at = datetime.utcnow().isoformat()
+        cash = 1.0 if mode == "live" else 0.0
+        blocked_margin = 1.0 if harvester_enabled else 0.0
+        total_equity = 1.0 if breakout_enabled else 0.0
+        
+        conn = sqlite3.connect(SQLITE_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE portfolio SET cash = ?, blocked_margin = ?, total_equity = ?, updated_at = ? WHERE id = 2",
+            (cash, blocked_margin, total_equity, updated_at)
+        )
+        conn.commit()
+        conn.close()
+        
+        if self.use_supabase:
+            payload = {
+                "id": 2,
+                "cash": cash,
+                "blocked_margin": blocked_margin,
+                "total_equity": total_equity,
+                "updated_at": updated_at
+            }
+            self._supabase_request("POST", "portfolio", payload)
+
+    def load_config_state(self):
+        now = time.time()
+        if self._config_cache and now - self._last_config_fetch < 10:
+            return self._config_cache
+            
+        if self.use_supabase:
+            try:
+                conf_res = self._supabase_request("GET", "portfolio", params={"id": "eq.2"})
+                if conf_res and len(conf_res) > 0:
+                    c = conf_res[0]
+                    conn = sqlite3.connect(SQLITE_PATH)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE portfolio SET cash = ?, blocked_margin = ?, total_equity = ?, updated_at = ? WHERE id = 2",
+                        (float(c["cash"]), float(c["blocked_margin"]), float(c["total_equity"]), c["updated_at"])
+                    )
+                    conn.commit()
+                    conn.close()
+                    self._config_cache = {
+                        "mode": "live" if float(c["cash"]) > 0.5 else "paper",
+                        "volatility_harvester": bool(float(c["blocked_margin"]) > 0.5),
+                        "momentum_breakout": bool(float(c["total_equity"]) > 0.5)
+                    }
+                    self._last_config_fetch = now
+                    return self._config_cache
+            except Exception:
+                pass
+                
+        conn = sqlite3.connect(SQLITE_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT cash, blocked_margin, total_equity FROM portfolio WHERE id = 2")
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            self._config_cache = {
+                "mode": "live" if row[0] > 0.5 else "paper",
+                "volatility_harvester": bool(row[1] > 0.5),
+                "momentum_breakout": bool(row[2] > 0.5)
+            }
+        else:
+            self._config_cache = {"mode": "paper", "volatility_harvester": True, "momentum_breakout": True}
+            
+        self._last_config_fetch = now
+        return self._config_cache
 
     # Positions operations
     def save_position(self, symbol, product_id, underlying, side, size, entry_price, mark_price, margin, unrealized_pnl, delta, gamma, theta, vega):

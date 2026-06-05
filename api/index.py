@@ -128,17 +128,27 @@ async def get_logs():
 
 @app.post("/api/config")
 async def update_config(req: ConfigRequest):
+    conf = db.load_config_state()
+    new_mode = conf["mode"]
+    new_harv = conf["volatility_harvester"]
+    new_break = conf["momentum_breakout"]
+    
     if req.mode is not None:
         if req.mode in ["paper", "live"]:
+            new_mode = req.mode
             portfolio.set_mode(req.mode)
         else:
             raise HTTPException(status_code=400, detail="Mode must be 'paper' or 'live'")
             
     if req.volatility_harvester is not None:
+        new_harv = req.volatility_harvester
         engine.strategies["volatility_harvester"].toggle(req.volatility_harvester)
         
     if req.momentum_breakout is not None:
+        new_break = req.momentum_breakout
         engine.strategies["momentum_breakout"].toggle(req.momentum_breakout)
+        
+    db.save_config_state(new_mode, new_harv, new_break)
         
     return {"success": True, "message": "Configuration updated successfully."}
 
