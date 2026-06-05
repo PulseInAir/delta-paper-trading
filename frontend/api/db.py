@@ -11,6 +11,7 @@ load_dotenv()
 # In Vercel serverless, the only writable directory is /tmp
 SQLITE_PATH = "/tmp/trading.db"
 
+class DatabaseManager:
     def __init__(self):
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_KEY")
